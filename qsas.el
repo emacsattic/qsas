@@ -52,7 +52,7 @@
      ((let ((case-fold-search nil))
         (eq (string-match "[[:upper:]]" string skip-end) skip-end))
       (let ((ups (let ((case-fold-search nil))
-                   (count-matches-in-string
+                   (qsas-count-matches-in-string
                     "[[:upper:]]" string skip-start skip-end))))
         (+ ups (* (- skipped ups) 0.15))))
      (t skipped))))
@@ -62,7 +62,7 @@
    ((zerop (length abbrev))             0.9)
    ((< (length string) (length abbrev)) 0.0)
    ((let ((case-fold-search t))
-      (string-match (make-abbreviation-regexp abbrev) string))
+      (string-match (qsas-make-abbrev-regexp abbrev) string))
     (loop with groups = (cddr (match-data))
           while groups
           for prev    = 0 then end
