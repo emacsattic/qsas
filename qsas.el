@@ -24,7 +24,7 @@
 
 ;;; Code:
 
-(eval-when-compile (require 'cl))
+(require 'cl)
 
 (defun qsas-count-matches-in-string (regexp string &optional start end)
   (setq start (or start 0)
@@ -87,6 +87,67 @@
         (puthash cache-key
                  (qsas-abbrev-score-nocache string abbrev)
                  qsas-abbrev-score-cache))))
+
+
+
+;;; Realtime Abbreviation Scoring
+
+(defun* qsas-add-to-list-as-sorted (list-var value &key (test '<) (key 'identity))
+  (let ((list (symbol-value list-var)))
+    (if (or (null list)
+            (funcall test
+                     (funcall key value)
+                     (funcall key (car list))))
+        (set list-var (cons value list))
+      (while (and list
+                  (cdr list)
+                  (funcall test
+                           (funcall key (cadr list))
+                           (funcall key value)))
+        (setq list (cdr list)))
+      (setcdr list (cons value (cdr list))))))
+
+(defsubst qsas-current-time-float ()
+  (let ((time (current-time)))
+    (+ (* (float (first time))
+          (lsh 2 16))
+       (float (second time))
+       (/ (float (third time))
+          1000000))))
+
+(defmacro* qsas-with-stopwatch ((&optional (elapsed-name 'elapsed)) &body body)
+  (declare (indent 1))
+  (let ((start (gensym "START")))
+    `(let ((,start (qsas-current-time-float)))
+       (flet ((,elapsed-name ()
+                 (- (qsas-current-time-float) ,start)))
+         ,@body))))
+
+(defmacro* qsas-with-timeout ((timeout &optional timeout-result (tick-name 'tick)) &body body)
+  (declare (indent 1))
+  (let ((elapsed (gensym "ELAPSED")))
+    `(catch 'timeout
+       (qsas-with-stopwatch (,elapsed)
+         (flet ((,tick-name ()
+                   (when (< ,timeout (,elapsed))
+                     (throw 'timeout ,timeout-result))))
+           ,@body)))))
+
+(defun* qsas-realtime-abbrev-scoring (list abbrev &key limit timeout quality)
+  (let (new-list)
+    (qsas-with-timeout (timeout (nreverse new-list))
+      (loop with length = 0
+            for string in list
+            for score = (qsas-abbrev-score string abbrev)
+            if (>= score quality)
+            do (qsas-add-to-list-as-sorted 'new-list (cons string score)
+                                           :test '<
+                                           :key 'cdr)
+               (incf length)
+            if (> length limit)
+            do (pop new-list) (setq length limit)
+            do (tick)
+            finally return (nreverse new-list)))))
 
 (provide 'qsas)
 ;;; qsas.el ends here
